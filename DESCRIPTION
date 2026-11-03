@@ -1,0 +1,18 @@
+Package: HIXscore
+Type: Package
+Title: Multi-Layer Epithelial Instability Scores (seHIX, scHIX, CM) and sysHIX
+Version: 0.0.0.9000
+Authors@R: person("yf", "Zhang", email = "15663801582@163.com", role = c("aut", "cre"))
+Description: Computes the epithelial (E), cellular-state (C) and microenvironment
+    (M) layer scores from single-cell expression data and fuses them into sysHIX.
+    Supports pretrained oral-mucosa models, user-supplied normal-tissue baselines,
+    and fully user-trained models.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Depends: R (>= 4.1.0)
+Imports: Seurat (>= 4.3.0), SeuratObject (< 5.0.0), dplyr, Matrix, nnls, ordinalNet, stats, utils
+Suggests: NMF, pROC, coin, lmerTest, ggplot2, caret, edgeR, limma, variancePartition, ConsensusClusterPlus, BiocParallel, testthat (>= 3.0.0), knitr, rmarkdown
+VignetteBuilder: knitr
+Config/testthat/edition: 3

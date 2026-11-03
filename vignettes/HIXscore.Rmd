@@ -1,0 +1,174 @@
+---
+title: "Getting started with HIXscore"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting started with HIXscore}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", eval = requireNamespace("Seurat", quietly = TRUE))
+```
+
+HIXscore computes three sample-level layer scores from single-cell RNA-seq and fuses them into **sysHIX**:
+**E** (epithelial meta-programs), **C** (cell-level baseline-deviation modules) and **M** (immune/stromal cell-state
+composition). This vignette runs on small *synthetic* data so that it takes seconds; the steps that need the
+reference download, the annotation or the long BDM selection are shown but not run (`eval = FALSE`).
+
+Supported: Seurat 4.3 - 4.4.
+
+```{r library}
+library(HIXscore)
+```
+
+## Step 0: reference data (not run)
+
+The annotation transfers labels from a single-cell reference. By default the HIXscore reference (about 550 MB) is
+downloaded once into the user cache and its md5 sum is checked.
+
+```{r reference, eval = FALSE}
+ref <- load_reference()                                    # download (cached), check, prepare
+save_reference(ref, "HIXscore_reference_prepared.rds")     # optional: skip the preparation next time
+ref <- load_reference(path = "HIXscore_reference_prepared.rds")
+```
+
+A reference of your own is a Seurat (v4) object with the raw counts in the `RNA` assay, a major-cell-type and a
+cell-state metadata column (epithelial cells labelled `"Epithelial"`), and a PCA reduction with the embeddings of all cells
+and the feature loadings. For modes 1 and 2 its cell states must include the 72 states of the shipped M-layer model.
+
+```{r own-reference, eval = FALSE}
+ref <- load_reference(path = "my_reference.rds", major_col = "celltype_major", minor_col = "cell_type2",
+                      reduction = "pca", ref_features = NULL)
+check_reference(ref)                                       # lists the M-layer states the reference lacks
+```
+
+## Step 1: annotate the cells (not run)
+
+```{r annotate, eval = FALSE}
+# obj: Seurat object with raw counts, all samples, unique cell names and a sample column
+obj <- annotate_cells(obj, ref, sample_col = "sample_id", checkpoint_dir = "annotation_checkpoints")
+attr(obj, "annotation_summary")
+attr(obj, "annotation_failed")                             # samples that failed, with the reason
+inp <- prepare_input(obj)                                  # log-normalise; split into epithelial / non-epithelial
+epi <- inp$epi; tme <- inp$tme
+```
+
+Each sample is annotated on its own; a failing sample does not stop the others, and `checkpoint_dir` lets a repeated
+call annotate only the missing samples. Use `minor_for = "all"` if you also need the epithelial states (BDM steps).
+
+## Synthetic input
+
+```{r data}
+set.seed(1)
+mp <- default_MP_list(); bdm <- default_BDM_programs(); states <- rownames(default_M_model()$W)
+genes <- unique(c(unlist(mp), unlist(bdm), paste0("G", 1:2500)))
+ns <- 12; per <- 45; n <- ns * per
+sid <- paste0("s", rep(seq_len(ns), each = per))
+tissue <- rep(c("NT", "PD", "PrCA"), each = ns / 3)[as.integer(sub("s", "", sid))]
+mu <- rexp(length(genes), 0.5)
+m <- matrix(rpois(length(genes) * n, rep(mu, n)), length(genes), n,
+            dimnames = list(genes, paste0("c", seq_len(n))))
+epi <- Seurat::NormalizeData(Seurat::CreateSeuratObject(m), verbose = FALSE)
+epi$sample_id <- sid; epi$tissue <- tissue; epi$series <- paste0("ser", 1 + as.integer(sub("s", "", sid)) %% 4)
+tme <- data.frame(sample_id = rep(paste0("s", seq_len(ns)), each = 250),
+                  cell_state = sample(states, ns * 250, replace = TRUE))
+```
+
+## Step 2: `hixscore()` - modes 1 and 2
+
+```{r mode1}
+res <- hixscore(epi, tme, layers = "ALL", mode = "pretrained")
+res$status
+head(res$samples[, c("sample_id", "has_E", "has_C", "has_M", "has_sysHIX", "E_seHIX_z", "S_C_z", "S_M_z", "sysHIX")], 4)
+```
+
+`layers` selects what is computed (`"E"`, `"C"`, `"M"`, `"sysHIX"` or `"ALL"`). Each layer is scored on the samples that
+pass its own filters (`min_cells_epi = 30`, `min_cells_tme = 200`); samples are intersected only for `sysHIX`.
+
+Run the layers one at a time and pass the result as `previous` to reuse what is finished:
+
+```{r layers}
+r <- hixscore(epi, layers = "E")
+r <- hixscore(epi, layers = "C", previous = r)
+r <- hixscore(epi, tme, layers = "M", previous = r)
+r <- hixscore(layers = "sysHIX", previous = r)
+r$status
+```
+
+A layer that fails does not stop the others. Here the M layer cannot be scored because no cell state is in the model; E and
+C are kept, `sysHIX` is skipped, and the layer can be repaired and the fusion added without recomputing E and C:
+
+```{r failure, warning = FALSE}
+bad <- tme; bad$cell_state <- "not_a_state"
+r <- hixscore(epi, bad, layers = "ALL")
+r$status[, c("layer", "status", "note")]
+r <- hixscore(epi, tme, layers = c("M", "sysHIX"), previous = r)
+r$status[, c("layer", "status")]
+```
+
+Mode 2 refits the E and C baselines and the scHIX thresholds on the NT samples of `epi`:
+
+```{r mode2, warning = FALSE}
+res2 <- hixscore(epi, tme, mode = "custom_baseline", tissue_col = "tissue", nt_label = "NT")
+res2$info$n_nt_E_baseline
+```
+
+Fewer than 3 NT samples is an error and 3 - 9 gives a warning.
+
+## Mode 3: `hixscore_train()`
+
+The training steps can be run one by one or together; finished steps are reused through `previous`.
+
+```{r mode3, warning = FALSE, eval = requireNamespace("caret", quietly = TRUE)}
+labels <- data.frame(sample_id = paste0("s", seq_len(ns)), label = rep(c("NT", "Inflammatory", "Malignant"), each = ns / 3))
+tr <- hixscore_train(epi, steps = c("E", "C"))                         # baselines
+tr <- hixscore_train(epi, tme, labels, steps = "fusion", previous = tr,
+                     levels = c("NT", "Inflammatory", "Malignant"))     # fusion model
+tr$status
+res3 <- hixscore(epi, tme, mode = "custom_baseline", model = tr$model, E_baseline = tr$E_baseline,
+                 C_baseline = tr$C_baseline, M_model = tr$M_model)
+range(res3$samples$sysHIX, na.rm = TRUE)
+```
+
+With two classes (`levels = c("NT", "Disease")`) the fusion is a logistic regression and sysHIX is the probability of
+disease (0 - 1). The returned training sysHIX is computed on the samples the fusion model was fitted on.
+
+### M layer from your data
+
+```{r mlayer, eval = FALSE}
+tr <- hixscore_train(tme = tme, steps = "M_scan", M_model = "derive")  # NMF rank scan
+tr$scans$M                                                             # cophenetic correlation per rank
+tr <- hixscore_train(tme = tme, steps = "M", M_model = "derive", M_k = "auto", previous = tr)
+```
+
+`M_k = "auto"` takes the rank with rho(k-2) < rho(k-1) < rho(k) and rho(k) > rho(k+1) for the cophenetic correlation rho.
+
+### BDM gene sets from your data (not run)
+
+The selection needs the raw counts, the sample, tissue and `series` columns and the epithelial state of each cell
+(annotate with `minor_for = "all"`; the state column is `predicted.minor`). The number of modules is chosen from the
+stability table, so the work is split into two steps.
+
+```{r bdm, eval = FALSE}
+tr <- hixscore_train(epi, steps = "BDM_scan", programs = "derive", bdm_state_col = "predicted.minor",
+                     bdm_args = list(), bdm_maxK = 10, bdm_reps = 200)     # the slow part
+tr$scans$bdm$stability                                                      # choose bdm_k
+tr <- hixscore_train(epi, steps = "BDM", programs = "derive", bdm_k = 5, previous = tr)
+tr$programs                                                                 # Module_1 ... gene symbols
+
+# then the remaining steps with these programs
+tr <- hixscore_train(epi, tme, labels, steps = c("E", "C", "fusion"), programs = tr$programs, previous = tr)
+```
+
+`bdm_args` takes the arguments of the selection steps: `max_var`, `min_freq`, `min_fc`, `min_consistency`,
+`min_disease_types`, `min_cells`, `min_logcpm` and others (see `?bdm_constrained_genes`, `?bdm_deviation_genes`,
+`?bdm_pseudobulk`). The selection is repeated leaving each cohort (`series`) out and needs at least 2 cohorts with more
+than 5 samples. Your own gene sets are passed as `programs = list(Module_1 = c(...), Module_2 = c(...))`.
+
+## Evaluate
+
+```{r eval, eval = requireNamespace("pROC", quietly = TRUE)}
+ev <- evaluate_scores(res$samples, stages = c(NT = "NT", PD = "non-malignant", PrCA = "malignant"), min_n = 1)
+ev$auc_nt_vs_disease
+```

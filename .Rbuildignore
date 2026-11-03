@@ -1,0 +1,5 @@
+^\.github$
+^data-raw$
+^LICENSE\.md$
+^README\.Rmd$
+^validation$

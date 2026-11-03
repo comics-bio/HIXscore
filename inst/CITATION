@@ -1,0 +1,8 @@
+bibentry("Manual",
+  title = "HIXscore: multi-layer epithelial instability scores (seHIX, scHIX, CM) and sysHIX",
+  author = person("yf", "Zhang"),
+  year = format(Sys.Date(), "%Y"),
+  note = "R package version 0.0.0.9000",
+  url = "https://github.com/comics-bio/HIXscore",
+  textVersion = "Zhang yf. HIXscore: multi-layer epithelial instability scores (seHIX, scHIX, CM) and sysHIX. https://github.com/comics-bio/HIXscore (the associated paper reference will be added on publication)."
+)

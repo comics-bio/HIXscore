@@ -1,0 +1,9 @@
+.Rproj.user
+.Rhistory
+.RData
+*.Rcheck/
+inst/doc
+*.log
+Rplots.pdf
+# validation scripts, logs and result objects are local working files, not part of the package
+validation/
