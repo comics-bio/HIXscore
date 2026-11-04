@@ -58,6 +58,12 @@
 #' @param nt_label Label of normal tissue.
 #' @param min_cells_epi,min_cells_tme Minimum epithelial / immune+stromal cells per sample.
 #' @param add_mp_scores Compute MP scores on `epi`.
+#' @param M_W Optional user NMF basis matrix of the M layer (cell states x CMs, row names = cell states, non-negative;
+#'   see [build_M_ecotypes()]). When given, the `"M"` step builds the M-layer model from this `W` (no rank scan, `M_k`
+#'   is ignored) and `"M_scan"` is not run; `tme` is still needed to build the composition matrix.
+#' @param mp_list Optional user E-layer gene sets (named list, see [validate_MP_list()]) used instead of
+#'   [default_MP_list()] in the `"E"` and `"fusion"` steps; the E baseline is fitted on these sets and the sets are
+#'   returned as `mp_list`.
 #' @param seed Random seed.
 #' @return A `hixscore_train` list: `model` (for [hixscore()]), `E_baseline`, `C_baseline`, `M_model`, `programs`,
 #'   `scans` (the M rank scan and the BDM stability table), `intermediate` (reusable BDM results), `status`
@@ -70,13 +76,19 @@ hixscore_train <- function(epi = NULL, tme = NULL, labels = NULL, steps = "ALL",
                            M_ranks = 2:10, previous = NULL, on_error = c("continue", "stop"),
                            sample_col = "sample_id", tissue_col = "tissue", series_col = "series",
                            nt_label = "NT", state_col = "cell_state", min_cells_epi = 30, min_cells_tme = 200,
-                           add_mp_scores = TRUE, seed = 123) {
+                           add_mp_scores = TRUE, seed = 123, mp_list = NULL, M_W = NULL) {
   .check_seurat()
   on_error <- match.arg(on_error); steps_in <- steps; steps <- .norm_steps(steps); stopped_for_k <- FALSE
   if (!is.null(previous) && !inherits(previous, "hixscore_train")) stop("`previous` must be the result of hixscore_train().", call. = FALSE)
-  derive_M <- identical(M_model, "derive"); derive_B <- identical(programs, "derive")
+  mp_cols <- NULL
+  if (!is.null(mp_list)) { mp_list <- validate_MP_list(mp_list); mp_cols <- names(mp_list) }
+  mp_use <- if (is.null(mp_list)) default_MP_list() else mp_list
+  if (!is.null(M_W) && !(identical(M_model, "default") || identical(M_model, "derive")))
+    stop("Give either `M_W` or an M-layer model object in `M_model`, not both.", call. = FALSE)
+  derive_M <- identical(M_model, "derive") || !is.null(M_W); derive_B <- identical(programs, "derive")
   # steps that only make sense when the component is derived from the data
   if (!derive_M) steps <- setdiff(steps, c("M_scan", "M"))
+  if (!is.null(M_W)) steps <- setdiff(steps, "M_scan")
   if (!derive_B) steps <- setdiff(steps, c("BDM_scan", "BDM"))
   # "ALL" with `previous` runs only the steps that are not finished yet; named steps are always rerun
   if (any(toupper(as.character(steps_in)) == "ALL") && !is.null(previous$status))
@@ -125,10 +137,10 @@ hixscore_train <- function(epi = NULL, tme = NULL, labels = NULL, steps = "ALL",
   if ("M_scan" %in% steps) { r <- go("M_scan", scan_M_rank(M_composition(), ranks = M_ranks, seed = seed)); if (r$status == "done") scans$M <- r$value }
   if ("M" %in% steps) {
     r <- go("M", {
-      P <- M_composition(); k <- M_k
+      P <- M_composition(); k <- if (is.null(M_W)) M_k else NULL
       if (identical(k, "auto")) { k <- attr(if (!is.null(scans$M)) scans$M else scan_M_rank(P, ranks = M_ranks, seed = seed), "optimal_rank")
         if (is.na(k)) stop("Automatic rank selection found no rank (see scan_M_rank()); set `M_k` manually.") }
-      build_M_ecotypes(P, k = k, seed = seed) })
+      if (!is.null(M_W)) build_M_ecotypes(P, W = M_W, seed = seed) else build_M_ecotypes(P, k = k, seed = seed) })
     if (r$status == "done") R$M_model <- r$value
   }
 
@@ -161,8 +173,8 @@ hixscore_train <- function(epi = NULL, tme = NULL, labels = NULL, steps = "ALL",
 
   # ---- E and C baselines ----
   if ("E" %in% steps) {
-    r <- go("E", { need_epi("E"); e <- if (add_mp_scores) compute_MP_scores(epi) else epi
-                   fit_E_baseline(.get_meta(e), sample_col, tissue_col, nt_label, min_cells = min_cells_epi) })
+    r <- go("E", { need_epi("E"); e <- if (add_mp_scores) compute_MP_scores(epi, mp_list = mp_use) else epi
+                   fit_E_baseline(.get_meta(e), sample_col, tissue_col, nt_label, min_cells = min_cells_epi, mp_cols = mp_cols) })
     if (r$status == "done") R$E_baseline <- r$value
   }
   if ("C" %in% steps) {
@@ -188,7 +200,7 @@ hixscore_train <- function(epi = NULL, tme = NULL, labels = NULL, steps = "ALL",
         need_epi("fusion"); need_tme("fusion")
         n <- table(md[[sample_col]]); keep <- md[[sample_col]] %in% names(n)[n >= min_cells_epi]
         e <- if (!is.null(inter$epi_scHIX)) inter$epi_scHIX else compute_scHIX(epi[, keep], baseline = R$C_baseline, tissue_col = tissue_col, nt_label = nt_label)
-        e0 <- if (add_mp_scores) compute_MP_scores(epi[, keep]) else epi[, keep]
+        e0 <- if (add_mp_scores) compute_MP_scores(epi[, keep], mp_list = mp_use) else epi[, keep]
         E <- compute_E_seHIX(.get_meta(e0), baseline = R$E_baseline, sample_col = sample_col, tissue_col = tissue_col, min_cells = min_cells_epi)
         Cf <- .sample_C_features(.get_meta(e), "scHIX_cosine", sample_col, R$thr)
         M <- compute_M_CM_scores(tme, R$M_model, sample_col, state_col, min_cells_tme)
@@ -203,7 +215,7 @@ hixscore_train <- function(epi = NULL, tme = NULL, labels = NULL, steps = "ALL",
   if (stopped_for_k) message("BDM_scan finished. Choose the number of modules `bdm_k` from `$scans$bdm$stability`, then rerun with ",
                              "steps = \"ALL\", bdm_k = <k> and previous = <this result>; the finished steps are reused.")
   structure(list(model = R$model, E_baseline = R$E_baseline, C_baseline = R$C_baseline, M_model = R$M_model,
-                 programs = R$programs, thr = R$thr, scans = scans, intermediate = inter,
+                 programs = R$programs, mp_list = if (!is.null(mp_list)) mp_list else prev$mp_list, thr = R$thr, scans = scans, intermediate = inter,
                  status = do.call(rbind, unname(status[.TRAIN_STEPS])), training = R$training),
             class = "hixscore_train")
 }

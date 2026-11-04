@@ -30,7 +30,9 @@ hixscore_train(
   min_cells_epi = 30,
   min_cells_tme = 200,
   add_mp_scores = TRUE,
-  seed = 123
+  seed = 123,
+  mp_list = NULL,
+  M_W = NULL
 )
 }
 \arguments{
@@ -77,6 +79,14 @@ steps it also needs raw counts and the epithelial state label \code{bdm_state_co
 \item{add_mp_scores}{Compute MP scores on \code{epi}.}
 
 \item{seed}{Random seed.}
+
+\item{mp_list}{Optional user E-layer gene sets (named list, see \code{\link[=validate_MP_list]{validate_MP_list()}}) used instead of
+\code{\link[=default_MP_list]{default_MP_list()}} in the \code{"E"} and \code{"fusion"} steps; the E baseline is fitted on these sets and the sets are
+returned as \code{mp_list}.}
+
+\item{M_W}{Optional user NMF basis matrix of the M layer (cell states x CMs, row names = cell states, non-negative;
+see \code{\link[=build_M_ecotypes]{build_M_ecotypes()}}). When given, the \code{"M"} step builds the M-layer model from this \code{W} (no rank scan, \code{M_k}
+is ignored) and \code{"M_scan"} is not run; \code{tme} is still needed to build the composition matrix.}
 }
 \value{
 A \code{hixscore_train} list: \code{model} (for \code{\link[=hixscore]{hixscore()}}), \code{E_baseline}, \code{C_baseline}, \code{M_model}, \code{programs},

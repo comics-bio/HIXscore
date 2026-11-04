@@ -24,7 +24,8 @@ hixscore(
   E_baseline = NULL,
   C_baseline = NULL,
   M_model = default_M_model(),
-  programs = NULL
+  programs = NULL,
+  mp_list = NULL
 )
 }
 \arguments{
@@ -61,6 +62,12 @@ M layer when \code{epi} is not supplied.}
 \item{E_baseline, C_baseline, M_model}{Components from \code{\link[=hixscore_train]{hixscore_train()}} to use instead of the shipped ones.}
 
 \item{programs}{Optional user BDM gene sets (named list); requires a model from \code{\link[=hixscore_train]{hixscore_train()}}.}
+
+\item{mp_list}{Optional user E-layer gene sets (named list, see \code{\link[=validate_MP_list]{validate_MP_list()}}) used instead of
+\code{\link[=default_MP_list]{default_MP_list()}} for the MP scores. In \code{mode = "custom_baseline"} the E baseline is refitted on these sets. In
+\code{mode = "pretrained"} the shipped baseline and model are bound to the shipped MPs, so the names of \code{mp_list} must
+equal those of \code{\link[=default_MP_list]{default_MP_list()}} (an error otherwise); with an \code{E_baseline} from \code{\link[=hixscore_train]{hixscore_train()}} the names
+must include the MPs of that baseline.}
 }
 \value{
 A \code{hixscore} list: \code{samples} (one row per sample seen by any layer with the independent E, S_C and S_M

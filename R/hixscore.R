@@ -58,6 +58,11 @@
 #' @param model sysHIX model (default shipped oral model, or the `model` from [hixscore_train()]).
 #' @param E_baseline,C_baseline,M_model Components from [hixscore_train()] to use instead of the shipped ones.
 #' @param programs Optional user BDM gene sets (named list); requires a model from [hixscore_train()].
+#' @param mp_list Optional user E-layer gene sets (named list, see [validate_MP_list()]) used instead of
+#'   [default_MP_list()] for the MP scores. In `mode = "custom_baseline"` the E baseline is refitted on these sets. In
+#'   `mode = "pretrained"` the shipped baseline and model are bound to the shipped MPs, so the names of `mp_list` must
+#'   equal those of [default_MP_list()] (an error otherwise); with an `E_baseline` from [hixscore_train()] the names
+#'   must include the MPs of that baseline.
 #' @return A `hixscore` list: `samples` (one row per sample seen by any layer with the independent E, S_C and S_M
 #'   scores, z-scores, cell counts, `has_*` flags and sysHIX for samples with all three layers), `E`, `C`, `M`
 #'   (per-layer tables), `sysHIX` (the intersection with class probabilities), `status` (state, time and error of
@@ -69,7 +74,7 @@ hixscore <- function(epi = NULL, tme = NULL, layers = "ALL", mode = c("pretraine
                      sample_col = "sample_id", tissue_col = "tissue", nt_label = "NT", state_col = "cell_state",
                      min_cells_epi = 30, min_cells_tme = 200, min_epi_M = 0, add_mp_scores = TRUE,
                      model = default_sysHIX_model(), E_baseline = NULL, C_baseline = NULL,
-                     M_model = default_M_model(), programs = NULL) {
+                     M_model = default_M_model(), programs = NULL, mp_list = NULL) {
   .check_seurat()
   mode <- match.arg(mode); on_error <- match.arg(on_error); layers <- .norm_layers(layers)
   if (!is.null(previous) && !inherits(previous, "hixscore")) stop("`previous` must be the result of hixscore().", call. = FALSE)
@@ -90,6 +95,17 @@ hixscore <- function(epi = NULL, tme = NULL, layers = "ALL", mode = c("pretraine
             if (inherits(model, "sysHIX_model")) "; the user-trained model is used." else
               "; layer-to-score mappings and the fusion model stay at the oral training values.")
 
+  mp_cols <- NULL
+  if (!is.null(mp_list)) {
+    mp_list <- validate_MP_list(mp_list); mp_cols <- names(mp_list)
+    if (!is.null(E_baseline)) {
+      bm <- .as_E_baseline(E_baseline)$mp_cols
+      if (!all(bm %in% mp_cols)) stop("`mp_list` lacks MP(s) of the supplied E_baseline: ", paste(setdiff(bm, mp_cols), collapse = ", "), call. = FALSE)
+    } else if (mode == "pretrained" && !setequal(mp_cols, names(default_MP_list())))
+      stop("In mode 'pretrained' the shipped E baseline and model are bound to the shipped MPs, so `mp_list` must have the names of default_MP_list(). ",
+           "Use mode = 'custom_baseline' (E baseline refitted on your NT samples) or a model from hixscore_train().", call. = FALSE)
+  }
+
   prev <- if (is.null(previous)) list() else unclass(previous)
   res <- list(E = prev$E, C = prev$C, M = prev$M, sysHIX = prev$sysHIX, epi = prev$epi)
   comp <- if (is.null(prev$components)) list() else prev$components
@@ -103,14 +119,14 @@ hixscore <- function(epi = NULL, tme = NULL, layers = "ALL", mode = c("pretraine
 
   # shared setup: the model used by every layer; MP scores are added when the E layer is run
   comp$model <- model
-  if ("E" %in% layers && add_mp_scores && !is.null(epi)) { epi <- compute_MP_scores(epi); md <- .get_meta(epi) }
+  if ("E" %in% layers && add_mp_scores && !is.null(epi)) { epi <- compute_MP_scores(epi, mp_list = if (is.null(mp_list)) default_MP_list() else mp_list); md <- .get_meta(epi) }
 
   # ---- E layer ----
   if ("E" %in% layers) {
     r <- .run_layer("E", {
       need_epi("E")
       E_base <- if (!is.null(E_baseline)) E_baseline else if (mode == "pretrained") system.file("extdata", "E_seHIX_baseline_oral.rds", package = "HIXscore") else NULL
-      E <- compute_E_seHIX(md, baseline = E_base, sample_col = sample_col, tissue_col = tissue_col, nt_label = nt_label, min_cells = min_cells_epi)
+      E <- compute_E_seHIX(md, baseline = E_base, sample_col = sample_col, tissue_col = tissue_col, nt_label = nt_label, min_cells = min_cells_epi, mp_cols = mp_cols)
       compute_E_z(E, model)
     }, on_error)
     mark("E", r); if (r$status == "done") res$E <- r$value

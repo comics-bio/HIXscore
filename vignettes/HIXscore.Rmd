@@ -116,6 +116,15 @@ res2$info$n_nt_E_baseline
 
 Fewer than 3 NT samples is an error and 3 - 9 gives a warning.
 
+Your own E-layer gene sets are given with `mp_list` (named list; checked by `validate_MP_list()`). In mode 2 the E baseline is
+fitted on these sets; in mode 1 the names must equal those of `default_MP_list()`.
+
+```{r custom-mp, warning = FALSE}
+my_mp <- default_MP_list()[1:4]; names(my_mp) <- paste0("MyMP_", seq_along(my_mp))
+r_mp <- hixscore(epi, layers = "E", mode = "custom_baseline", mp_list = my_mp)
+r_mp$status[, c("layer", "status")]
+```
+
 ## Mode 3: `hixscore_train()`
 
 The training steps can be run one by one or together; finished steps are reused through `previous`.
@@ -142,6 +151,12 @@ tr$scans$M                                                             # cophene
 tr <- hixscore_train(tme = tme, steps = "M", M_model = "derive", M_k = "auto", previous = tr)
 ```
 
+Your own weight matrix `W` (states x CMs, non-negative, row names = states) is given with `M_W`; no rank scan is run:
+
+```{r mw, eval = FALSE}
+tr <- hixscore_train(tme = tme, steps = "M", M_W = W)
+```
+
 `M_k = "auto"` takes the rank with rho(k-2) < rho(k-1) < rho(k) and rho(k) > rho(k+1) for the cophenetic correlation rho.
 
 ### BDM gene sets from your data (not run)
@@ -164,7 +179,25 @@ tr <- hixscore_train(epi, tme, labels, steps = c("E", "C", "fusion"), programs =
 `bdm_args` takes the arguments of the selection steps: `max_var`, `min_freq`, `min_fc`, `min_consistency`,
 `min_disease_types`, `min_cells`, `min_logcpm` and others (see `?bdm_constrained_genes`, `?bdm_deviation_genes`,
 `?bdm_pseudobulk`). The selection is repeated leaving each cohort (`series`) out and needs at least 2 cohorts with more
-than 5 samples. Your own gene sets are passed as `programs = list(Module_1 = c(...), Module_2 = c(...))`.
+than 5 samples.
+
+### Your own BDM gene sets (mode 3)
+
+Instead of selecting the gene sets from your data, pass them as a named list: `programs = list(Module_1 = c(...), Module_2 = c(...))`
+with at least 2 sets, at least 5 genes each and unique names. `validate_BDM_programs()` checks the list (and, with `genes =`,
+warns when less than 70% of a set is present in your data). The model is trained with these sets, and the same sets
+have to be used for scoring: `hixscore()` takes them together with the components of that training run.
+
+```{r own-bdm, warning = FALSE, eval = requireNamespace("caret", quietly = TRUE)}
+my_bdm <- setNames(unname(bdm[1:3]), paste0("MyModule_", 1:3))
+my_bdm <- validate_BDM_programs(my_bdm, genes = rownames(epi))
+tr_b <- hixscore_train(epi, tme, labels, steps = c("E", "C", "fusion"), programs = my_bdm,
+                       levels = c("NT", "Inflammatory", "Malignant"))
+res_b <- hixscore(epi, tme, mode = "custom_baseline", model = tr_b$model, E_baseline = tr_b$E_baseline,
+                  C_baseline = tr_b$C_baseline, M_model = tr_b$M_model, programs = tr_b$programs)
+names(tr_b$programs)
+res_b$status[, c("layer", "status")]
+```
 
 ## Evaluate
 

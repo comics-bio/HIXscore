@@ -156,6 +156,20 @@ lets you control the steps and repeat only the one that failed. The time of each
 res <- hixscore(epi, tme, mode = "custom_baseline", tissue_col = "tissue", nt_label = "NT")
 ```
 
+**Your own E-layer gene sets (all modes).** `mp_list` is a named list of gene sets (at least 2 sets, at least 5 genes each,
+syntactically valid names; checked by `validate_MP_list()`) that replaces `default_MP_list()` for the MP scores of the E layer:
+
+```r
+my_mp <- list(MyMP_1 = c(...), MyMP_2 = c(...), MyMP_3 = c(...))
+res <- hixscore(epi, tme, mode = "custom_baseline", mp_list = my_mp)   # E baseline refitted on these sets
+```
+
+* Mode 2 and mode 3: the E baseline is fitted on your NT samples with your sets. In mode 2 the z-score parameters and the
+  fusion model stay at the oral training values.
+* Mode 1: the shipped E baseline and model are bound to the shipped MPs, so `mp_list` must have the names of
+  `default_MP_list()`; other names are an error that points to mode 2 or 3.
+* With an `E_baseline` from `hixscore_train()`, `mp_list` must contain the MPs of that baseline.
+
 **NT sample number (mode 2).** The E-layer baseline and feature standardisation are estimated from your NT samples:
 fewer than 3 NT samples (with enough epithelial cells) is an error and 3 to 9 gives a warning. The number used is stored in
 `res$info$n_nt_E_baseline`.
@@ -180,6 +194,9 @@ epithelial cells; samples with <= 10 epithelial cells are flagged (`M_epi_below_
 | `"C"` | C-layer baseline and scHIX thresholds from the NT cells | `$C_baseline` |
 | `"fusion"` | layer scores, out-of-fold S_C and S_M, fusion model | `$model` |
 | `"ALL"` | every step that is needed | |
+
+Your own components (mode 3) can be given as inputs: `mp_list` (E-layer gene sets), `programs = list(...)` (C-layer BDM gene
+sets) and `M_W` (M-layer weight matrix, see below).
 
 `M_model` and `programs` decide where the M-layer ecotypes and the BDM gene programs come from: `"default"` (shipped),
 `"derive"` (computed from your data in the `M*` / `BDM*` steps) or an object you supply (a model from
@@ -206,16 +223,25 @@ Use the result with `hixscore()`:
 
 ```r
 res <- hixscore(new_epi, new_tme, mode = "custom_baseline", model = tr$model, E_baseline = tr$E_baseline,
-                C_baseline = tr$C_baseline, M_model = tr$M_model, programs = tr$programs)
+                C_baseline = tr$C_baseline, M_model = tr$M_model, programs = tr$programs, mp_list = tr$mp_list)
 ```
+
+`programs` of `hixscore()` (your own BDM gene sets) requires the `model`, `E_baseline`, `C_baseline` and `M_model` of a
+`hixscore_train()` run that used the same gene sets. `mp_list = tr$mp_list` passes the E-layer gene sets of that run.
 
 ### M layer: ecotypes from your data
 
 `M_model = "derive"` builds the composition matrix of your cell states (`build_M_composition()`), scans the NMF rank
 (`scan_M_rank()`) and builds the ecotypes (`build_M_ecotypes()`). `M_k = "auto"` takes the rank that satisfies
 rho(k-2) < rho(k-1) < rho(k) and rho(k) > rho(k+1) for the cophenetic correlation rho; the scan has to cover ranks on both
-sides, and no rank is returned if none satisfies the rule. Your own NMF basis `W` (states x CMs, row names = states) can be
-used with `build_M_ecotypes(P, W = W)`, and the resulting model passed as `M_model`.
+sides, and no rank is returned if none satisfies the rule. Your own NMF basis `W` (states x CMs, non-negative, row names = states) is given with `M_W`:
+
+```r
+tr <- hixscore_train(tme = tme, steps = "M", M_W = W)     # no rank scan; M_k is ignored; M_model is not combined with M_W
+```
+
+Every state of `W` must be a row of the composition matrix built from `tme` (states with too few cells in all samples are
+not rows of it). The same model is obtained with `build_M_ecotypes(P, W = W)`, passed as `M_model`.
 
 ### C layer: selecting the BDM gene sets
 
@@ -266,9 +292,24 @@ sc  <- bdm_scan_modules(dev, maxK = 10)
 programs <- build_BDM_geneset(dev, dg$direction, k = 5, scan = sc)
 ```
 
-`steps = "ALL"` with `programs = "derive"` and no `bdm_k` stops after the scan and tells you to choose `bdm_k`. **Your own
-gene sets** are used with `programs = list(Module_1 = c(...), Module_2 = c(...), ...)` (at least two sets with at least
-five genes each, checked by `validate_BDM_programs()`); a model trained with them has to be used with the same gene sets.
+`steps = "ALL"` with `programs = "derive"` and no `bdm_k` stops after the scan and tells you to choose `bdm_k`.
+
+**Your own gene sets.** Instead of selecting them, pass the BDM gene sets as a named list: at least 2 sets, at least 5 genes
+each, unique names. `validate_BDM_programs(programs, genes = rownames(epi))` checks the list and warns when less than 70% of a
+set is present in your data. The model is trained with these sets, and `hixscore()` takes them together with the components of
+that training run:
+
+```r
+my_bdm <- list(Module_1 = c("GENE1", "GENE2", ...), Module_2 = c(...), Module_3 = c(...))
+my_bdm <- validate_BDM_programs(my_bdm, genes = rownames(epi))
+
+tr <- hixscore_train(epi, tme, labels, steps = c("E", "C", "fusion"), programs = my_bdm)
+res <- hixscore(new_epi, new_tme, mode = "custom_baseline", model = tr$model, E_baseline = tr$E_baseline,
+                C_baseline = tr$C_baseline, M_model = tr$M_model, programs = tr$programs)
+```
+
+A model trained with your gene sets cannot be combined with the shipped model; `hixscore(programs = ...)` without such a model
+is an error.
 
 ### Notes on the trained model
 

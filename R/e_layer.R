@@ -42,12 +42,15 @@ utils::globalVariables(c("sample_id", "tissue", "label", "value", "group"))
 #'   standardisation are estimated from few samples).
 #' @param mp_pattern Regular expression selecting MP columns.
 #' @param exclude_na_mp Drop MPs labelled NA or Ribosome.
+#' @param mp_cols Optional character vector with the names of the MP score columns to use (for example the names of
+#'   your own `mp_list`); when given, `mp_pattern` and `exclude_na_mp` are not applied.
 #' @return An object of class `sysHIX_E_baseline`.
 #' @export
 fit_E_baseline <- function(meta, sample_col = "sample_id", tissue_col = "tissue",
                            nt_label = "NT", mp_pattern = "^MP_\\d+_",
-                           exclude_na_mp = TRUE, min_cells = 30, min_nt_samples = 3) {
-  mp_cols <- .mp_cols(meta, mp_pattern, exclude_na_mp)
+                           exclude_na_mp = TRUE, min_cells = 30, min_nt_samples = 3, mp_cols = NULL) {
+  if (is.null(mp_cols)) mp_cols <- .mp_cols(meta, mp_pattern, exclude_na_mp)
+  else if (length(miss <- setdiff(mp_cols, colnames(meta)))) stop("Metadata lacks the MP columns: ", paste(miss, collapse = ", "), call. = FALSE)
   f <- .e_sample_features(meta, mp_cols, sample_col, tissue_col, min_cells)
   feats <- c(mp_cols, paste0(mp_cols, "_CV"))
   n_nt <- sum(f$tissue == nt_label)
@@ -104,15 +107,17 @@ fit_E_baseline <- function(meta, sample_col = "sample_id", tissue_col = "tissue"
 #' @param nt_label Label of normal tissue in the tissue column.
 #' @param mp_pattern Regular expression selecting MP columns.
 #' @param exclude_na_mp Drop MPs labelled NA or Ribosome.
+#' @param mp_cols Optional names of the MP score columns, used only when the baseline is fitted on `meta`
+#'   (`baseline = NULL`); see [fit_E_baseline()].
 #' @return data.frame with `sample_id`, `tissue`, `n_cells`, `E_seHIX`.
 #' @export
 compute_E_seHIX <- function(meta, baseline = NULL, sample_col = "sample_id",
                             tissue_col = "tissue", nt_label = "NT",
                             mp_pattern = "^MP_\\d+_", exclude_na_mp = TRUE,
-                            legacy_scaling = FALSE, min_cells = 30) {
+                            legacy_scaling = FALSE, min_cells = 30, mp_cols = NULL) {
   if (is.null(baseline)) {
     baseline <- fit_E_baseline(meta, sample_col, tissue_col, nt_label, mp_pattern,
-                               exclude_na_mp, min_cells)
+                               exclude_na_mp, min_cells, mp_cols = mp_cols)
   } else {
     baseline <- .as_E_baseline(baseline)
   }

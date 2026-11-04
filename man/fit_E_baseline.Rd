@@ -12,7 +12,8 @@ fit_E_baseline(
   mp_pattern = "^MP_\\\\d+_",
   exclude_na_mp = TRUE,
   min_cells = 30,
-  min_nt_samples = 3
+  min_nt_samples = 3,
+  mp_cols = NULL
 )
 }
 \arguments{
@@ -31,6 +32,9 @@ fit_E_baseline(
 \item{min_nt_samples}{Minimum number of NT samples (passing \code{min_cells}); fewer is an error.
 Between \code{min_nt_samples} and 9 NT samples a warning is given (the baseline and the feature
 standardisation are estimated from few samples).}
+
+\item{mp_cols}{Optional character vector with the names of the MP score columns to use (for example the names of
+your own \code{mp_list}); when given, \code{mp_pattern} and \code{exclude_na_mp} are not applied.}
 }
 \value{
 An object of class \code{sysHIX_E_baseline}.

@@ -13,7 +13,8 @@ compute_E_seHIX(
   mp_pattern = "^MP_\\\\d+_",
   exclude_na_mp = TRUE,
   legacy_scaling = FALSE,
-  min_cells = 30
+  min_cells = 30,
+  mp_cols = NULL
 )
 }
 \arguments{
@@ -37,6 +38,9 @@ features using the mean/SD of the input samples. Default \code{FALSE}: use the f
 baseline mean/SD, so a sample's score does not depend on the other samples in the input.}
 
 \item{min_cells}{Minimum epithelial cells per sample (default 30).}
+
+\item{mp_cols}{Optional names of the MP score columns, used only when the baseline is fitted on \code{meta}
+(\code{baseline = NULL}); see \code{\link[=fit_E_baseline]{fit_E_baseline()}}.}
 }
 \value{
 data.frame with \code{sample_id}, \code{tissue}, \code{n_cells}, \code{E_seHIX}.
