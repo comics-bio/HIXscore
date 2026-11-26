@@ -15,11 +15,12 @@ All scores are **sample-level**. The package is a research tool, not a diagnosti
 
 ```r
 # install.packages("remotes")
-remotes::install_github("comics-bio/HIXscore")
+remotes::install_github("comics-bio/HIXscore", upgrade = "never")
 ```
 
 **Supported Seurat versions:** Seurat 4.3 - 4.4. Seurat >= 5 is not supported; the main functions stop with an
-explanatory error.
+explanatory error. CRAN currently carries Seurat 6.0; the `upgrade = "never"` argument above prevents
+`install_github` from upgrading your Seurat installation.
 
 ## Workflow
 
@@ -41,7 +42,7 @@ oral validation cohort. It needs no reference and no annotation:
 
 ```r
 library(HIXscore)
-paths <- download_validation_data()   # ~116 MB from https://comics.med.sustech.edu.cn/track/scRNA-ref/, md5-checked, cached
+paths <- download_validation_data()   # ~111 MB from https://comics.med.sustech.edu.cn/track/scRNA-ref/, md5-checked, cached
 validate_hixscore(paths)              # runs hixscore(mode = "pretrained") and compares the AUCs with the reference values
 ```
 

@@ -36,5 +36,5 @@ samples (\code{OLP}, \code{OSF}, \code{Tumor}), with a higher score for the high
 }
 \details{
 A correct installation reproduces the reference AUCs (E 0.804, C 0.888, M 0.942 and sysHIX 0.935 with 13 NT samples)
-and the same number of NT and disease samples per layer. The run time and memory are given in the README.
+and the same number of NT and disease samples per layer.
 }
