@@ -46,16 +46,14 @@ validate_hixscore(paths)              # runs hixscore(mode = "pretrained") and c
 ```
 
 The data are the epithelial raw counts (`validation_counts.rds`, genes x cells) and the cell annotation of all cells
-(`validation_meta.rds`: `sample_id`, `tissue`, `major`, `cell_state`). Cells are numbered, and sample ids are anonymised;
-no barcode or study information is kept. `validate_hixscore()` takes a few minutes and about 8 GB of memory, and should
-report `pass = TRUE` for every layer (AUC of NT against the disease groups, tolerance 0.005):
+(`validation_meta.rds`: `sample_id`, `tissue`, `major`, `cell_state`).
 
-| layer | NT / disease samples | expected AUC |
-|---|---|---|
-| E (seHIX) | 13 / 31 | 0.804 |
-| C (S_C) | 13 / 31 | 0.888 |
-| M (S_M) | 13 / 36 | 0.942 |
-| sysHIX | 13 / 31 | 0.935 |
+| layer | expected AUC |
+|---|---|
+| E (seHIX) | 0.804 |
+| C (S_C) | 0.888 |
+| M (S_M) | 0.942 |
+| sysHIX | 0.935 |
 
 The per-sample scores are returned in `attr(result, "samples")`. If you downloaded the files yourself, pass their paths:
 `validate_hixscore(c(counts = "validation_counts.rds", meta = "validation_meta.rds"))`.
